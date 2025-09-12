@@ -46,7 +46,7 @@ namespace
         return std::wstring{ buf };
     }
 
-    std::wstring VFormat(const wchar_t* fmt, const va_list args)
+    std::wstring VFormat(const wchar_t* fmt, va_list args)
     {
         va_list argsCopy;
         va_copy(argsCopy, args);
@@ -57,11 +57,13 @@ namespace
             return L"";
         }
 
-        std::wstring out(static_cast<size_t>(len), L'\0');
-        _vsnwprintf_s(out.data(), out.size() + 1, _TRUNCATE, fmt, args);
+        std::wstring out;
+        out.resize(static_cast<size_t>(len) + 1); // room for null
+        _vsnwprintf_s(out.data(), out.size(), _TRUNCATE, fmt, args);
+        out.resize(wcslen(out.c_str())); // shrink to actual length
         return out;
     }
-
+   
     std::string ToUtf8(const std::wstring& w)
     {
         if (w.empty())
@@ -93,28 +95,20 @@ namespace
     {
         std::error_code errorCode;
         const auto size = std::filesystem::file_size(LogPath, errorCode);
-        if (errorCode)
-        {
-            return;
-        }
+        if (errorCode || size < MaxBytesBeforeRotate) return;
 
-        if (size < MaxBytesBeforeRotate)
-        {
-            return;
-        }
-
-        // Build rotated file path
-        std::filesystem::path rotated1 = LogPath;
-        rotated1.replace_extension(L".log.1");
-
-        // Close before moving
         if (OutputStream.is_open())
         {
             OutputStream.flush();
+            OutputStream.close();
         }
 
+        std::filesystem::path rotated1 = LogPath;
+        rotated1 += L".1";
         std::filesystem::remove(rotated1, errorCode);
         std::filesystem::rename(LogPath, rotated1, errorCode);
+
+        EnsureOpen();
     }
 
     void WriteLine(const std::wstring& line)
@@ -142,16 +136,20 @@ namespace Logger
 {
     void Init(const std::wstring& appName)
     {
-        std::lock_guard<std::mutex> lock(TheMutex);
-
         const std::filesystem::path base = std::filesystem::temp_directory_path();
         const auto dir = base / appName;
-        std::error_code errorCode;
-        std::filesystem::create_directories(dir, errorCode);
 
-        LogPath = dir / (appName + L".log");
-        EnsureOpen();
+        {
+            std::lock_guard<std::mutex> lock(TheMutex);
 
+            std::error_code errorCode;
+            std::filesystem::create_directories(dir, errorCode);
+
+            LogPath = dir / (appName + L".log");
+            EnsureOpen();
+        }
+
+        // Log AFTER releasing the mutex to avoid re-entrancy
         Log(Level::Info, L"Logger initialized. File: %ls", LogPath.c_str());
     }
 
