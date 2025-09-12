@@ -134,23 +134,21 @@ namespace
 
 namespace Logger
 {
-    void Init(const std::wstring& appName)
+    void Init(const std::wstring& appName, const std::wstring& logFolderPath)
     {
-        const std::filesystem::path base = std::filesystem::temp_directory_path();
-        const auto dir = base / appName;
-
         {
             std::lock_guard<std::mutex> lock(TheMutex);
 
             std::error_code errorCode;
-            std::filesystem::create_directories(dir, errorCode);
+            std::filesystem::create_directories(logFolderPath, errorCode);
 
-            LogPath = dir / (appName + L".log");
+			const std::filesystem::path base = logFolderPath;            
+            LogPath = base / (appName + L".log");
             EnsureOpen();
         }
 
         // Log AFTER releasing the mutex to avoid re-entrancy
-        Log(Level::Info, L"Logger initialized. File: %ls", LogPath.c_str());
+        Log(Level::Info, L"Logger initialised. File: %ls", LogPath.c_str());
     }
 
     void SetMinLevel(const Level level)

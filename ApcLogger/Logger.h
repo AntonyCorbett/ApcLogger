@@ -5,8 +5,8 @@ namespace Logger
 {
     enum class Level { Trace, Debug, Info, Warn, Error };  // NOLINT(performance-enum-size)
 
-    // Initialize logger. Creates a temp folder "<temp>\<appName>\" and a UTF-8 log file, e.g. "MyApp.log".
-    void Init(const std::wstring& appName);
+    // Initialize logger. Creates a folder (if needed) and a UTF-8 log file, e.g. "MyApp.log".
+    void Init(const std::wstring& appName, const std::wstring& logFolderPath);
 
     // Optional: change minimum level (default: Info in Release, Debug in Debug)
     void SetMinLevel(Level level);
