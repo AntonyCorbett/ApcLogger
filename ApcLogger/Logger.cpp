@@ -12,11 +12,12 @@ namespace
 {
     std::mutex TheMutex;
     std::filesystem::path LogPath;
-    std::ofstream OutputStream;
+    std::ofstream OutputStream;  // NOLINT(bugprone-throwing-static-initialization)
     bool RotationFailed = false;  // suppresses repeated rotation attempts after a rename failure
     std::atomic<Logger::Level> MinLevel =
-#if defined(_DEBUG)
-        Logger::Level::Debug;
+
+#ifdef _DEBUG
+	    Logger::Level::Debug;
 #else
         Logger::Level::Info;
 #endif
@@ -148,7 +149,7 @@ namespace Logger
     {
         std::wstring initPath;
         {
-            std::lock_guard<std::mutex> lock(TheMutex);
+            std::scoped_lock lock(TheMutex);
 
             if (OutputStream.is_open())
             {
@@ -181,7 +182,7 @@ namespace Logger
         MinLevel = level;
     }
 
-    void Log(const Level level, const wchar_t* fmt, ...)
+    void Log(const Level level, const wchar_t* fmt, ...)  // NOLINT(modernize-avoid-variadic-functions)
     {
         if (level < MinLevel)
         {
@@ -194,7 +195,7 @@ namespace Logger
         va_end(args);
 
         const std::wstring line = FormatTimestamp() + L" [" + LevelToTag(level) + L"] " + msg;
-        std::lock_guard<std::mutex> lock(TheMutex);
+        std::scoped_lock lock(TheMutex);
         WriteLine(line);
     }
 
@@ -230,7 +231,7 @@ namespace Logger
 
     void Shutdown()
     {
-        std::lock_guard<std::mutex> lock(TheMutex);
+        std::scoped_lock lock(TheMutex);
         if (OutputStream.is_open())
         {
             OutputStream.flush();
