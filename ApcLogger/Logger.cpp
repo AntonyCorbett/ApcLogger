@@ -13,6 +13,7 @@ namespace
     std::mutex TheMutex;
     std::filesystem::path LogPath;
     std::ofstream OutputStream;
+    bool RotationFailed = false;  // suppresses repeated rotation attempts after a rename failure
     std::atomic<Logger::Level> MinLevel =
 #if defined(_DEBUG)
         Logger::Level::Debug;
@@ -99,6 +100,8 @@ namespace
 
     void TryRotateIfNeeded()
     {
+        if (RotationFailed) return;
+
         std::error_code errorCode;
         const auto size = std::filesystem::file_size(LogPath, errorCode);
         if (errorCode || size < MaxBytesBeforeRotate) return;
@@ -114,7 +117,10 @@ namespace
         std::filesystem::remove(rotated1, errorCode);
         std::filesystem::rename(LogPath, rotated1, errorCode);
         if (errorCode)
+        {
             OutputDebugStringW(L"ApcLogger: log rotation failed\r\n");
+            RotationFailed = true;
+        }
     }
 
     void WriteLine(const std::wstring& line)
@@ -133,7 +139,6 @@ namespace
 
         const auto utf8 = ToUtf8(line + L"\r\n");
         OutputStream.write(utf8.data(), static_cast<std::streamsize>(utf8.size()));
-        OutputStream.flush();
     }
 }
 
@@ -141,6 +146,7 @@ namespace Logger
 {
     void Init(const std::wstring& appName, const std::wstring& logFolderPath)
     {
+        std::wstring initPath;
         {
             std::lock_guard<std::mutex> lock(TheMutex);
 
@@ -149,21 +155,23 @@ namespace Logger
             if (errorCode)
             {
                 OutputDebugStringW(L"ApcLogger: failed to create log directory\r\n");
+                LogPath.clear();
                 return;
             }
 
             const std::filesystem::path base = logFolderPath;
             LogPath = base / (appName + L".log");
+            RotationFailed = false;
             EnsureOpen();
+            initPath = LogPath.wstring();
         }
 
-        // Log AFTER releasing the mutex to avoid re-entrancy
-        Log(Level::Info, L"Logger initialised. File: %ls", LogPath.c_str());
+        // Log AFTER releasing the mutex to avoid re-entrancy; use captured copy to avoid data race
+        Log(Level::Info, L"Logger initialised. File: %ls", initPath.c_str());
     }
 
     void SetMinLevel(const Level level)
     {
-        std::lock_guard<std::mutex> lock(TheMutex);
         MinLevel = level;
     }
 
