@@ -150,6 +150,12 @@ namespace Logger
         {
             std::lock_guard<std::mutex> lock(TheMutex);
 
+            if (OutputStream.is_open())
+            {
+                OutputStream.flush();
+                OutputStream.close();
+            }
+
             std::error_code errorCode;
             std::filesystem::create_directories(logFolderPath, errorCode);
             if (errorCode)

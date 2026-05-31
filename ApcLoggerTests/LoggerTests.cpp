@@ -41,6 +41,7 @@ namespace ApcLoggerTests
         TEST_METHOD_CLEANUP(Teardown)
         {
             Logger::Shutdown();
+            Logger::SetMinLevel(Logger::Level::Info);
             std::error_code ec;
             std::filesystem::remove_all(testDir, ec);
         }
@@ -237,18 +238,24 @@ namespace ApcLoggerTests
             Logger::Shutdown();
         }
 
-        TEST_METHOD(ReinitResetsRotationFailedFlag)
+        TEST_METHOD(ReinitSwitchesActiveLogFile)
         {
-            // First init to a bad path (sets LogPath to empty on failure)
-            Logger::Init(L"TestApp", L"Z:\\Bad\\Path");
+            // First session logs to a subdirectory
+            const auto firstDir = testDir / L"first";
+            Logger::Init(L"TestApp", firstDir.wstring());
+            LOG_INFO(L"session one");
 
-            // Second init to a valid path must work correctly
-            Logger::Init(L"TestApp", testDir.wstring());
-            LOG_INFO(L"after reinit");
+            // Reinit to a different directory; stream must be closed and reopened
+            const auto secondDir = testDir / L"second";
+            Logger::Init(L"TestApp", secondDir.wstring());
+            LOG_INFO(L"session two");
             Logger::Shutdown();
 
-            const auto content = ReadFileBytes(testDir / L"TestApp.log");
-            Assert::AreNotEqual(std::string::npos, content.find("after reinit"));
+            const auto first  = ReadFileBytes(firstDir  / L"TestApp.log");
+            const auto second = ReadFileBytes(secondDir / L"TestApp.log");
+            Assert::AreNotEqual(std::string::npos, first.find("session one"),    L"first log missing session one");
+            Assert::AreEqual   (std::string::npos, first.find("session two"),    L"session two must not appear in first log");
+            Assert::AreNotEqual(std::string::npos, second.find("session two"),   L"second log missing session two");
         }
     };
 }
