@@ -2,6 +2,7 @@
 #include "Logger.h"
 
 #include <windows.h>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -12,7 +13,7 @@ namespace
     std::mutex TheMutex;
     std::filesystem::path LogPath;
     std::ofstream OutputStream;
-    Logger::Level MinLevel =
+    std::atomic<Logger::Level> MinLevel =
 #if defined(_DEBUG)
         Logger::Level::Debug;
 #else
@@ -72,6 +73,11 @@ namespace
         }
 
         const int needed = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+        if (needed <= 0)
+        {
+            OutputDebugStringW(L"ApcLogger: UTF-8 conversion failed\r\n");
+            return std::string{};
+        }
         std::string s(static_cast<size_t>(needed), '\0');
         WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), s.data(), needed, nullptr, nullptr);
         return s;
@@ -107,8 +113,8 @@ namespace
         rotated1 += L".1";
         std::filesystem::remove(rotated1, errorCode);
         std::filesystem::rename(LogPath, rotated1, errorCode);
-
-        EnsureOpen();
+        if (errorCode)
+            OutputDebugStringW(L"ApcLogger: log rotation failed\r\n");
     }
 
     void WriteLine(const std::wstring& line)
@@ -118,13 +124,12 @@ namespace
         OutputDebugStringW(L"\r\n");
 
         // Write to file (UTF-8)
+        TryRotateIfNeeded();
         EnsureOpen();
         if (!OutputStream.is_open())
         {
             return;
         }
-
-        TryRotateIfNeeded();
 
         const auto utf8 = ToUtf8(line + L"\r\n");
         OutputStream.write(utf8.data(), static_cast<std::streamsize>(utf8.size()));
@@ -141,8 +146,13 @@ namespace Logger
 
             std::error_code errorCode;
             std::filesystem::create_directories(logFolderPath, errorCode);
+            if (errorCode)
+            {
+                OutputDebugStringW(L"ApcLogger: failed to create log directory\r\n");
+                return;
+            }
 
-			const std::filesystem::path base = logFolderPath;            
+            const std::filesystem::path base = logFolderPath;
             LogPath = base / (appName + L".log");
             EnsureOpen();
         }
